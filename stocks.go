@@ -10,35 +10,42 @@ import (
 	"time"
 )
 
+type StockPrice struct {
+	symbol string
+	price float64
+}
+
 func main() {
 	symbols, year := [...]string{"AAPL", "GOOG", "IBM", "MSFT"}, 2008
 	numSymbols := len(symbols)
-	closingPrices, timeouts := make([]chan float64, numSymbols), make([]<-chan time.Time, numSymbols)
+	closingPrices, timeouts := make([]chan StockPrice, numSymbols), make([]<-chan time.Time, numSymbols)
 
 	// Synchronous version.
 	for _, i := range symbols {
 		closingPrice, err := getYearEndClosing(i, year)
 		if err == nil {
-			fmt.Printf("%s: %f\n", i, closingPrice)
+			fmt.Printf("%s: %f\n", closingPrice.symbol, closingPrice.price)
 		}
 	}
 
 	// Asynchronous version.
 	for j, k := range symbols {
-		closingPrices[j] = make(chan float64, 1)
+		closingPrices[j] = make(chan StockPrice, 1)
 		go getYearEndClosingAsync(k, year, closingPrices[j])
-		timeouts[j] = time.After(time.Duration(2000) * time.Millisecond)
+		timeouts[j] = time.After(time.Duration(10) * time.Second)
+	}
 
+	for j := range symbols {
 		select {
-		case closingPrice := <-closingPrices[j]:
-			fmt.Printf("%s: %f\n", k, closingPrice)
 		case <-timeouts[j]:
 			fmt.Println("Timeout.")
+		case closingPrice := <-closingPrices[j]:
+			fmt.Printf("%s: %f\n", closingPrice.symbol, closingPrice.price)
 		}
 	}
 }
 
-func getYearEndClosingAsync(symbol string, year int, c chan float64) {
+func getYearEndClosingAsync(symbol string, year int, c chan StockPrice) {
 	closingPrice, err := getYearEndClosing(symbol, year)
 	if err != nil {
 		fmt.Println(err.Error())
@@ -46,22 +53,22 @@ func getYearEndClosingAsync(symbol string, year int, c chan float64) {
 	c <- closingPrice
 }
 
-func getYearEndClosing(symbol string, year int) (float64, error) {
+func getYearEndClosing(symbol string, year int) (StockPrice, error) {
 	url := fmt.Sprintf("http://ichart.finance.yahoo.com/table.csv?s=%s&a=11&b=01&c=%d&d=11&e=31&f=%d&g=m",
 		symbol, year, year)
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, errors.New(fmt.Sprintf("Error making an HTTP request for stock %s.", symbol))
+		return StockPrice{}, errors.New(fmt.Sprintf("Error making an HTTP request for stock %s.", symbol))
 	}
 	defer resp.Body.Close()
 	csvReader := csv.NewReader(resp.Body)
 	records, err2 := csvReader.ReadAll()
 	if err2 != nil {
-		return 0, errors.New(fmt.Sprintf("Error parsing CSV values for stock %s.", symbol))
+		return StockPrice{}, errors.New(fmt.Sprintf("Error parsing CSV values for stock %s.", symbol))
 	}
 	closingPrice, err3 := strconv.ParseFloat(records[1][4], 64)
 	if err3 != nil {
-		return 0, err3
+		return StockPrice{}, err3
 	}
-	return closingPrice, nil
+	return StockPrice{symbol, closingPrice}, nil
 }
