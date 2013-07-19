@@ -12,7 +12,7 @@ import (
 
 type StockPrice struct {
 	symbol string
-	price float64
+	price  float64
 }
 
 func main() {
@@ -20,14 +20,17 @@ func main() {
 	numSymbols := len(symbols)
 	closingPrices, timeouts := make([]chan StockPrice, numSymbols), make([]<-chan time.Time, numSymbols)
 
+	results := make([]StockPrice, numSymbols)
 	// Synchronous version.
 	for _, i := range symbols {
 		closingPrice, err := getYearEndClosing(i, year)
 		if err == nil {
-			fmt.Printf("%s: %f\n", closingPrice.symbol, closingPrice.price)
+			results = append(results, closingPrice)
 		}
 	}
+	getTopStock(results, year)
 
+	results = make([]StockPrice, numSymbols)
 	// Asynchronous version.
 	for j, k := range symbols {
 		closingPrices[j] = make(chan StockPrice, 1)
@@ -40,9 +43,23 @@ func main() {
 		case <-timeouts[j]:
 			fmt.Println("Timeout.")
 		case closingPrice := <-closingPrices[j]:
-			fmt.Printf("%s: %f\n", closingPrice.symbol, closingPrice.price)
+			results = append(results, closingPrice)
 		}
 	}
+	getTopStock(results, year)
+}
+
+func getTopStock(prices []StockPrice, year int) {
+	// @TODO: Error case if this is empty.
+	lastHigh, topResult := 0.0, -1
+	for i, j := range prices {
+		if j.price > lastHigh {
+			topResult = i
+			lastHigh = j.price
+		}
+	}
+
+	fmt.Printf("Top stock of %d is %s closing at price %f.\n", year, prices[topResult].symbol, prices[topResult].price)
 }
 
 func getYearEndClosingAsync(symbol string, year int, c chan StockPrice) {
